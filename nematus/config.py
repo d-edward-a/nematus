@@ -1217,10 +1217,13 @@ def _check_config_consistency(spec, config, set_by_user):
     # Check if user is trying to use the Transformer with features that
     # aren't supported yet.
     if config.model_type == 'transformer':
-        if config.factors > 1:
-            msg = 'factors are not yet supported for the \'transformer\' ' \
-                  'model type'
-            error_messages.append(msg)
+        # START of change by ANIN 26.09.2022
+        # remove condition to include factors > 1 in transformer
+        # if config.factors > 1:
+        #     msg = 'factors are not yet supported for the \'transformer\' ' \
+        #           'model type'
+        #     error_messages.append(msg)
+        # END of change by ANIN 26.09.2022
         if config.softmax_mixture_size > 1:
             msg = 'softmax mixtures are not yet supported for the ' \
                   '\'transformer\' model type'

@@ -219,11 +219,9 @@ def train(config, sess):
                 continue
             write_summary_for_this_batch = config.summary_freq and ((progress.uidx % config.summary_freq == 0) or (config.finish_after and progress.uidx % config.finish_after == 0))
             (factors, seqLen, batch_size) = x_in.shape
-
             output = updater.update(
                 sess, x_in, x_mask_in, y_in, y_mask_in, num_to_target,
                 write_summary_for_this_batch)
-
             if config.print_per_token_pro == False:
                 total_loss += output
             else:

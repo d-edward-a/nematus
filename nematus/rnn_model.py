@@ -445,7 +445,6 @@ class Encoder(object):
                 first_residual_output=1)
 
     def get_context(self, x, x_mask):
-
         with tf.compat.v1.variable_scope("embedding"):
             embs = self.emb_layer.forward(x)
             if self.dropout_source != None:

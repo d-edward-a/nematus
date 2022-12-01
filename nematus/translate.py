@@ -91,7 +91,6 @@ def main(settings):
             session.run(fetches=smoothing.swap_ops)
 
         max_translation_len = settings.translation_maxlen
-
         # Create a BeamSearchSampler / RandomSampler.
         if settings.translation_strategy == 'beam_search':
             sampler = BeamSearchSampler(models, configs, settings.beam_size)
@@ -107,7 +106,7 @@ def main(settings):
                              'positive to negative (as of commit 95793196...). '
                              'If you are using the scores for reranking etc, then '
                              'you may need to update your scripts.')
-
+        
         # Translate the source file.
         translate_utils.translate_file(
             input_file=settings.input,

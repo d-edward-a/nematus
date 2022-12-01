@@ -36,7 +36,6 @@ def translate_batch(session, sampler, x, x_mask, max_translation_len,
         k elements (where k is the beam size), sorted by score in best-first
         order.
     """
-
     x_tiled = numpy.tile(x, reps=[1, 1, sampler.beam_size])
     x_mask_tiled = numpy.tile(x_mask, reps=[1, sampler.beam_size])
 
@@ -60,8 +59,8 @@ def translate_batch(session, sampler, x, x_mask, max_translation_len,
     feed_dict[sampler.inputs.batch_size_x] = x.shape[-1]
     feed_dict[sampler.inputs.max_translation_len] = max_translation_len
     feed_dict[sampler.inputs.normalization_alpha] = normalization_alpha
-
     # Run the sampler.
+    # FIXME WHERE THE ERROR OCCURS
     translations, scores = session.run(sampler.outputs, feed_dict=feed_dict)
 
     assert len(translations) == x.shape[-1]
@@ -104,7 +103,6 @@ def translate_file(input_file, output_file, session, sampler, config,
             num_to_target: dictionary mapping target vocabulary IDs to strings.
             num_prev_translated: the number of previously translated sentences.
         """
-
         # Sort the maxibatch by length and split into minibatches.
         try:
             minibatches, idxs = util.read_all_lines(config, maxibatch,
@@ -112,7 +110,6 @@ def translate_file(input_file, output_file, session, sampler, config,
         except exception.Error as x:
             logging.error(x.msg)
             sys.exit(1)
-
         # Translate the minibatches and store the resulting beam (i.e.
         # translations and scores) for each sentence.
         beams = []
@@ -150,11 +147,11 @@ def translate_file(input_file, output_file, session, sampler, config,
         max_translation_len))
 
     start_time = time.time()
-
     num_translated = 0
     maxibatch = []
     while True:
         line = input_file.readline()
+
         if line == "":
             if len(maxibatch) > 0:
                 translate_maxibatch(maxibatch, num_to_target, num_translated)

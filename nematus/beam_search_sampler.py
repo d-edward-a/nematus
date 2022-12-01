@@ -135,7 +135,6 @@ def _beam_search(model_adapters, beam_size, batch_size_x, max_translation_len,
         is the length of the longest translation in the batch. scores contains
         sequnces scores, which are summed probabilities.
     """
-
     # Encode the input and generate a 1-step decoding function for each model.
     decoding_functions = []
     for adapter in model_adapters:
@@ -232,7 +231,7 @@ def _beam_search(model_adapters, beam_size, batch_size_x, max_translation_len,
     float_lengths = tf.cast(lengths, dtype=tf.float32)
     length_penalties = float_lengths ** normalization_alpha
     finished_scores = finished_scores / length_penalties
-
+    
     return finished_sequences, finished_scores
 
 

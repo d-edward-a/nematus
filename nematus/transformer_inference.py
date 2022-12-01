@@ -2,6 +2,7 @@
 
 import sys
 import tensorflow as tf
+import pandas as pd
 
 # ModuleNotFoundError is new in 3.6; older versions will throw SystemError
 if sys.version_info < (3, 6):
@@ -69,7 +70,6 @@ class ModelAdapter:
                 FLOAT_DTYPE)
 
         decoder = self._model.dec
-
         if self.config.transformer_dropout_embeddings > 0:
             dropout = tf.keras.layers.Dropout(rate=self.config.transformer_dropout_embeddings)
         else:
@@ -89,7 +89,7 @@ class ModelAdapter:
                 # TODO Is this necessary?
                 vocab_ids = tf.reshape(step_target_ids, [-1, 1])
                 # Look up embeddings for target IDs.
-                target_embeddings = decoder._embed(vocab_ids)
+                target_embeddings = decoder._embed(vocab_ids, factor=0)
                 # Add positional signal.
                 signal_slice = positional_signal[
                     :, current_time_step-1:current_time_step, :]
@@ -113,6 +113,7 @@ class ModelAdapter:
                         layer_output, encoder_output.enc_output,
                         encoder_output.cross_attn_mask)
                     layer_output = layer['ffn'].forward(layer_output)
+
                 # Return prediction at the final time-step to be consistent
                 # with the inference pipeline.
                 dec_output = layer_output[:, -1, :]
@@ -177,7 +178,7 @@ class ModelAdapter:
 
             def gather_attn(attn):
                 # TODO Specify second and third?
-                shapes = { attn: ('batch_size', None, None) }
+                shapes = { attn: ('batch_size', batch_size_x, self._config.state_size) }
                 tf_utils.assert_shapes(shapes)
                 attn_dims = tf_utils.get_shape_list(attn)
                 new_shape = [beam_size, batch_size_x] + attn_dims[1:]

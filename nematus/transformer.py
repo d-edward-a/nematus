@@ -40,7 +40,7 @@ class Transformer(object):
     def __init__(self, config):
         # Set attributes
         self.config = config
-        self.source_vocab_size = config.source_vocab_sizes[0]
+        self.source_vocab_size = config.source_vocab_sizes
         self.target_vocab_size = config.target_vocab_size
         self.name = 'transformer'
 
@@ -57,7 +57,7 @@ class Transformer(object):
         self.training = self.inputs.training
         self.scores = self.inputs.scores
         self.index = self.inputs.index
-
+        
         # Build the common parts of the graph.
         with tf.compat.v1.name_scope('{:s}_loss'.format(self.name)):
             # (Re-)generate the computational graph
@@ -70,11 +70,13 @@ class Transformer(object):
             with tf.compat.v1.name_scope('{:s}_encode'.format(self.name)):
                 enc_output, cross_attn_mask = self.enc.encode(
                     self.source_ids, self.source_mask)
+
             # Decode into target sequences
             with tf.compat.v1.name_scope('{:s}_decode'.format(self.name)):
                 logits = self.dec.decode_at_train(self.target_ids_in,
-                                                  enc_output,
-                                                  cross_attn_mask)
+                                                enc_output,
+                                                cross_attn_mask)
+
             # Instantiate loss layer(s)
             loss_layer = MaskedCrossEntropy(self.dec_vocab_size,
                                             self.config.label_smoothing,
@@ -82,6 +84,7 @@ class Transformer(object):
                                             FLOAT_DTYPE,
                                             time_major=False,
                                             name='loss_layer')
+
             # Calculate loss
             masked_loss, sentence_loss, batch_loss = \
                 loss_layer.forward(logits, self.target_ids_out, self.target_mask, self.training)
@@ -110,19 +113,30 @@ class Transformer(object):
                 enc_vocab_size = self.source_vocab_size
                 dec_vocab_size = self.target_vocab_size
             else:
-                assert self.source_vocab_size == self.target_vocab_size, \
+                assert self.source_vocab_size[0] == self.target_vocab_size, \
                     'Input and output vocabularies should be identical when tying embedding tables.'
-                enc_vocab_size = dec_vocab_size = self.source_vocab_size
+                enc_vocab_size = dec_vocab_size = self.source_vocab_size[0]
 
-            encoder_embedding_layer = EmbeddingLayer(enc_vocab_size,
-                                                     self.config.embedding_size,
-                                                     self.config.state_size,
-                                                     FLOAT_DTYPE,
-                                                     name='encoder_embedding_layer')
             if not self.config.tie_encoder_decoder_embeddings:
-                decoder_embedding_layer = EmbeddingLayer(dec_vocab_size,
+                encoder_embedding_layer = EmbeddingLayer(enc_vocab_size,
+                                                        self.config.embedding_size,
+                                                        self.config.state_size,
+                                                        self.config.dim_per_factor,
+                                                        FLOAT_DTYPE,
+                                                        name='encoder_embedding_layer')
+            else:
+                encoder_embedding_layer = EmbeddingLayer([enc_vocab_size],
+                                                        self.config.embedding_size,
+                                                        self.config.state_size,
+                                                        self.config.dim_per_factor,
+                                                        FLOAT_DTYPE,
+                                                        name='encoder_embedding_layer')
+
+            if not self.config.tie_encoder_decoder_embeddings:
+                decoder_embedding_layer = EmbeddingLayer([dec_vocab_size],
                                                          self.config.embedding_size,
                                                          self.config.state_size,
+                                                         [self.config.target_embedding_size],
                                                          FLOAT_DTYPE,
                                                          name='decoder_embedding_layer')
             else:
@@ -132,6 +146,7 @@ class Transformer(object):
                 softmax_projection_layer = EmbeddingLayer(dec_vocab_size,
                                                           self.config.embedding_size,
                                                           self.config.state_size,
+                                                          self.config.target_embedding_size,
                                                           FLOAT_DTYPE,
                                                           name='softmax_projection_layer')
             else:
@@ -147,7 +162,6 @@ class Transformer(object):
                                           softmax_projection_layer,
                                           self.training,
                                           'decoder')
-
         return dec_vocab_size
 
     @property
@@ -169,7 +183,7 @@ class Transformer(object):
     def _convert_inputs(self, inputs):
         # Convert from time-major to batch-major. Note that we take factor 0
         # from x and ignore any other factors.
-        source_ids = tf.transpose(a=inputs.x[0], perm=[1,0])
+        source_ids = tf.transpose(a=inputs.x, perm=[0,2,1])
         source_mask = tf.transpose(a=inputs.x_mask, perm=[1,0])
         target_ids_out = tf.transpose(a=inputs.y, perm=[1,0])
         target_mask = tf.transpose(a=inputs.y_mask, perm=[1,0])
@@ -198,7 +212,7 @@ class TransformerEncoder(object):
         self.embedding_layer = embedding_layer
         self.training = training
         self.name = name
-
+        
         # Track layers
         self.encoder_stack = dict()
         self.is_final_layer = False
@@ -220,7 +234,6 @@ class TransformerEncoder(object):
                 self.dropout_embedding = tf.keras.layers.Dropout(rate=self.config.transformer_dropout_embeddings)
             else:
                 self.dropout_embedding = None
-
             for layer_id in range(1, self.config.transformer_enc_depth + 1):
                 layer_name = 'layer_{:d}'.format(layer_id)
                 # Check if constructed layer is final
@@ -310,9 +323,9 @@ class TransformerDecoder(object):
         # Create nodes
         self._build_graph()
 
-    def _embed(self, index_sequence):
+    def _embed(self, index_sequence, factor=None):
         """ Embeds target-side indices to obtain the corresponding dense tensor representations. """
-        return self.embedding_layer.embed(index_sequence)
+        return self.embedding_layer.embed(index_sequence, factor)
 
     def _build_graph(self):
         """ Defines the model graph. """
@@ -373,7 +386,7 @@ class TransformerDecoder(object):
             """ Pre-processes target token ids before they're passed on as input to the decoder
             for parallel decoding. """
             # Embed target_ids
-            target_embeddings = self._embed(target_ids)
+            target_embeddings = self._embed(target_ids, factor=0)
             target_embeddings += positional_signal
             if self.dropout_embedding is not None:
                 target_embeddings = self.dropout_embedding(target_embeddings, training=self.training)
@@ -394,7 +407,7 @@ class TransformerDecoder(object):
             if self.from_rnn:
                 enc_output = tf.transpose(a=enc_output, perm=[1, 0, 2])
                 cross_attn_mask = tf.transpose(a=cross_attn_mask, perm=[3, 1, 2, 0])
-
+            
             self_attn_mask = get_right_context_mask(tf.shape(input=target_ids)[-1])
             positional_signal = get_positional_signal(tf.shape(input=target_ids)[-1],
                                                       self.config.embedding_size,
